@@ -12,3 +12,5 @@ services:
         value: "1"
       - key: NODE_VERSION
         value: "22"
+      - key: MAX_TOTAL_FILE_MB
+        value: "100"
