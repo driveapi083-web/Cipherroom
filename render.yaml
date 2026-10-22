@@ -14,3 +14,5 @@ services:
         value: "22"
       - key: MAX_TOTAL_FILE_MB
         value: "100"
+      - key: ROOM_GRACE_SECONDS
+        value: "300"
