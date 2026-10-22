@@ -1,0 +1,5 @@
+# Automatic HTTPS in front of CipherRoom. Replace chat.example.com with your domain.
+# Run the app with TRUST_PROXY=1 so rate limits see real client IPs.
+chat.example.com {
+	reverse_proxy 127.0.0.1:3000
+}

@@ -1,0 +1,28 @@
+CipherRoom - how to use (no coding needed)
+
+ONE-TIME: install Node.js (free) from https://nodejs.org  (choose "LTS").
+          If you forget, the start files will open the page for you.
+
+1) Chat on your own laptop only (to try it out)
+   Windows: double-click  START-WINDOWS.bat
+   Mac:     double-click  START-MAC.command
+            (first time on Mac: right-click the file > Open > Open)
+   Your browser opens CipherRoom. Keep the black window open while using it.
+
+2) Chat with friends who are somewhere else
+   Windows: double-click  SHARE-ONLINE-WINDOWS.bat
+   Mac:     double-click  SHARE-ONLINE-MAC.command
+   It prints a link like https://something.trycloudflare.com
+   Open THAT link and create the room. Then press Invite > "Create one-time
+   link" ONCE PER FRIEND, and send each friend their own link. Send the
+   password in a different message.
+   Your laptop must stay on and the windows must stay open while chatting.
+
+Rooms are one-time. Each friend's link works once: if they leave, they need
+YOUR permission (a "Let in" button at the top of your chat) to come back.
+When you (the host) leave, the room ends for everyone and all messages and
+files are erased. For a new chat, create a new room and new links.
+
+To stop: close the black window.
+Windows may show a "Windows protected your PC" or firewall box the first time:
+choose "More info > Run anyway" / "Allow".

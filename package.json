@@ -1,0 +1,16 @@
+{
+  "name": "cipherroom",
+  "version": "1.0.0",
+  "description": "Private, open-source, end-to-end encrypted chat rooms. The server only ever sees ciphertext. Zero dependencies.",
+  "type": "module",
+  "main": "server.js",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test \"test/*.test.js\""
+  }
+}
