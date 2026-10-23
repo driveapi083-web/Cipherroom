@@ -203,3 +203,22 @@ footer { margin-top: auto; color: var(--muted); font-size: 0.85rem; text-align: 
 .link-list { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 14px; }
 .link-list:empty { display: none; }
 .attach input[type="file"] { display: none; }
+
+/* ---------- replies and typing ---------- */
+
+.line { display: flex; align-items: center; gap: 4px; max-width: 100%; }
+.mine .line { flex-direction: row-reverse; }
+.line .bubble { min-width: 0; }
+.reply-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; opacity: 0.55; }
+.reply-btn:hover, .reply-btn:focus-visible { opacity: 1; background: var(--panel-2); }
+.reply-btn .icon { width: 16px; height: 16px; }
+.quote { display: block; width: 100%; text-align: left; font: inherit; font-size: 0.85rem; color: inherit; background: rgb(127 127 127 / 0.16); border: 0; border-inline-start: 3px solid var(--accent, currentColor); border-radius: 8px; padding: 4px 8px; margin: 0 0 6px; cursor: pointer; white-space: normal; overflow-wrap: anywhere; }
+.quote:disabled { cursor: default; opacity: 0.8; }
+.quote strong { display: block; font-size: 0.78rem; opacity: 0.85; }
+.quote span { display: block; opacity: 0.9; }
+.msg.flash .bubble { outline: 2px solid var(--accent, currentColor); outline-offset: 2px; transition: outline-color 0.4s; }
+.replybar { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-top: 1px solid var(--line); background: var(--panel-2); }
+.replybar[hidden] { display: none; }
+.replybar-text { flex: 1; min-width: 0; font-size: 0.85rem; color: var(--muted); }
+.replybar-text strong, .replybar-text span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.typing { min-height: 1.5em; padding: 0 16px; font-size: 0.82rem; color: var(--muted); font-style: italic; }

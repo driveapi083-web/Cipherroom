@@ -22,6 +22,10 @@ const HOST_KEY = 'cipherroom.host';
 const GUEST_KEY = 'cipherroom.guest';
 const NICK_KEY = 'cipherroom.nick';
 const MAX_TEXT = 2000;
+const QUOTE_MAX = 100; // characters of the original message shown in a reply
+const TYPING_GAP_MS = 3000; // send "typing" at most this often
+const TYPING_SHOW_MS = 5000; // a typing notice disappears after this long
+const MAX_TYPERS = 12;
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const AUTO_SHOW_IMAGE_BYTES = 2 * 1024 * 1024;
 const TICKET_RE = /^[A-Za-z0-9_-]{22}$/;
@@ -489,6 +493,10 @@ function startChat({ roomId, key, auth, hostToken, nick, password, justCreated }
     online: 1,
     me: null,
     seq: 0,
+    replyTo: null, // { i, n, q }: the message being answered
+    msgs: new Map(), // server message id -> { el, name, text } for quotes and jumps
+    typers: new Map(), // sender id -> { name, timer }
+    typingSent: 0,
     shown: new Set(),
     peers: new Map(), // connection id -> { name, host }
     integrity: new IntegrityTracker(),
@@ -527,7 +535,9 @@ function startChat({ roomId, key, auth, hostToken, nick, password, justCreated }
     h('button', { class: 'btn', type: 'button', onclick: leave }, icon('logout'), 'Leave'),
   );
   const composer = h('form', { class: 'composer', onsubmit: (e) => { e.preventDefault(); sendMessage(); } }, attachBtn, fileInput, input, sendBtn);
-  const chat = h('div', { class: 'chat' }, header, banner, knocksBox, list, composer);
+  const typingLine = h('div', { class: 'typing', 'aria-live': 'polite' });
+  const replyBar = h('div', { class: 'replybar', hidden: true });
+  const chat = h('div', { class: 'chat' }, header, banner, knocksBox, list, typingLine, replyBar, composer);
 
   const showChat = () => app.replaceChildren(chat);
   showChat();
@@ -676,11 +686,100 @@ function startChat({ roomId, key, auth, hostToken, nick, password, justCreated }
   async function sendMessage() {
     const text = input.value.trim();
     if (!text || !st.ready) return;
-    const sealed = await encryptMessage(key, roomId, { n: nick, u: uid, t: text, s: ++st.seq });
+    const body = { n: nick, u: uid, t: text, s: ++st.seq };
+    if (st.replyTo) body.r = { i: st.replyTo.i, n: st.replyTo.n, q: st.replyTo.q };
+    const sealed = await encryptMessage(key, roomId, body);
     send({ t: 'msg', ...sealed });
     input.value = '';
+    st.typingSent = 0;
+    clearReply();
     autosize();
   }
+
+  /* ---- replies ---- */
+
+  // A short, one-line description of a message for quoting.
+  function excerpt(p) {
+    const raw = p.k === 'file' ? `${IMAGE_TYPES.has(p.type) ? 'Photo' : 'File'}: ${safeName(p.name)}` : String(p.t ?? '');
+    const flat = raw.replace(/\s+/g, ' ').trim();
+    return flat.length > QUOTE_MAX ? `${flat.slice(0, QUOTE_MAX)}…` : flat;
+  }
+
+  function clearReply() {
+    st.replyTo = null;
+    replyBar.hidden = true;
+    replyBar.replaceChildren();
+  }
+
+  function startReply(id) {
+    const m = st.msgs.get(id);
+    if (!m || !st.ready) return;
+    st.replyTo = { i: id, n: m.name, q: m.text };
+    replyBar.replaceChildren(
+      h('div', { class: 'replybar-text' }, h('strong', {}, `Replying to ${m.name}`), h('span', {}, m.text)),
+      h('button', { class: 'btn icon-only small', type: 'button', title: 'Cancel reply', 'aria-label': 'Cancel reply', onclick: clearReply }, icon('x')),
+    );
+    replyBar.hidden = false;
+    input.focus();
+  }
+
+  function jumpTo(id) {
+    const m = st.msgs.get(id);
+    if (!m) return;
+    m.el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    m.el.classList.add('flash');
+    setTimeout(() => m.el.classList.remove('flash'), 1600);
+  }
+
+  // The quote shown above a reply. If we still hold the original, its own text is
+  // shown, so a sender cannot make a reply quote words nobody said.
+  function quoteBlock(r) {
+    if (!r || !Number.isInteger(r.i)) return null;
+    const local = st.msgs.get(r.i);
+    const name = local ? local.name : String(r.n ?? 'Someone').slice(0, 24);
+    const text = local ? local.text : String(r.q ?? '').slice(0, QUOTE_MAX);
+    const q = h('button', { class: 'quote', type: 'button', title: local ? 'Go to the original message' : 'The original message is no longer shown', onclick: () => jumpTo(r.i) }, h('strong', {}, name), h('span', {}, text));
+    if (!local) q.disabled = true;
+    return q;
+  }
+
+  /* ---- typing indicator ---- */
+
+  function renderTyping() {
+    const names = [...st.typers.values()].map((t) => t.name);
+    typingLine.textContent =
+      names.length === 0 ? '' : names.length === 1 ? `${names[0]} is typing…` : names.length === 2 ? `${names[0]} and ${names[1]} are typing…` : 'Several people are typing…';
+  }
+  function clearTyper(u) {
+    const t = st.typers.get(u);
+    if (!t) return;
+    clearTimeout(t.timer);
+    st.typers.delete(u);
+    renderTyping();
+  }
+  function clearTypers() {
+    for (const t of st.typers.values()) clearTimeout(t.timer);
+    st.typers.clear();
+    renderTyping();
+  }
+  async function onTyping(m) {
+    const p = await decryptMessage(key, roomId, m, 'typing');
+    if (!p || typeof p.u !== 'string' || p.u === uid) return;
+    const prev = st.typers.get(p.u);
+    if (!prev && st.typers.size >= MAX_TYPERS) return;
+    clearTimeout(prev?.timer);
+    st.typers.set(p.u, { name: String(p.n).slice(0, 24), timer: setTimeout(() => clearTyper(p.u), TYPING_SHOW_MS) });
+    renderTyping();
+  }
+  function noteTyping() {
+    const now = Date.now();
+    if (!st.ready || !input.value.trim() || now - st.typingSent < TYPING_GAP_MS) return;
+    st.typingSent = now;
+    encryptMessage(key, roomId, { n: nick, u: uid }, 'typing')
+      .then((sealed) => { if (st.ready) send({ t: 'typing', ...sealed }); })
+      .catch(() => { /* a missed "typing" is harmless */ });
+  }
+  input.addEventListener('input', noteTyping);
 
   function autosize() {
     input.style.height = 'auto';
@@ -778,9 +877,25 @@ function startChat({ roomId, key, auth, hostToken, nick, password, justCreated }
       }
       el.append(h('div', { class: 'meta' }, name, h('time', {}, when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))));
     }
-    if (!p) el.append(h('div', { class: 'bubble bad' }, 'This message could not be decrypted.'));
-    else if (p.k === 'file') el.append(validFile(p) ? fileBubble(p) : h('div', { class: 'bubble bad' }, 'This file message is not valid.'));
-    else el.append(h('div', { class: 'bubble' }, String(p.t ?? '')));
+    let bubble;
+    if (!p) bubble = h('div', { class: 'bubble bad' }, 'This message could not be decrypted.');
+    else if (p.k === 'file') bubble = validFile(p) ? fileBubble(p) : h('div', { class: 'bubble bad' }, 'This file message is not valid.');
+    else {
+      bubble = h('div', { class: 'bubble' });
+      const quote = p.r ? quoteBlock(p.r) : null;
+      if (quote) bubble.append(quote);
+      bubble.append(document.createTextNode(String(p.t ?? '')));
+    }
+    const usable = !!p && (p.k === 'file' ? validFile(p) : true);
+    if (usable) {
+      const name = String(p.n).slice(0, 24);
+      st.msgs.set(env.id, { el, name, text: excerpt(p) });
+      const replyBtn = h('button', { class: 'reply-btn', type: 'button', title: 'Reply', 'aria-label': `Reply to ${name}`, onclick: () => startReply(env.id) }, icon('reply'));
+      el.append(h('div', { class: 'line' }, bubble, replyBtn));
+    } else {
+      el.append(bubble);
+    }
+    if (p && typeof p.u === 'string') clearTyper(p.u);
     list.append(el);
 
     if (stick || mine || !live) list.scrollTop = list.scrollHeight;
@@ -955,6 +1070,9 @@ function startChat({ roomId, key, auth, hostToken, nick, password, justCreated }
         setEnabled(true);
 
         list.replaceChildren();
+        st.msgs.clear();
+        clearTypers();
+        clearReply();
         st.shown.clear();
         st.last = null;
         st.integrity = new IntegrityTracker();
@@ -970,6 +1088,9 @@ function startChat({ roomId, key, auth, hostToken, nick, password, justCreated }
       }
       case 'msg':
         await addMessage(m.m, true);
+        break;
+      case 'typing':
+        await onTyping(m);
         break;
       case 'joined': {
         if (m.replaces) st.peers.delete(m.replaces);
