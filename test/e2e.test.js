@@ -577,6 +577,50 @@ test("a room member cannot add chunks to someone else's upload", async () => {
   guest.ws.close();
 });
 
+test('typing notices are encrypted, reach everyone else, and are never stored', async () => {
+  const room = await fastRoom();
+  const { host } = await hostWithReady(room, 'hostNick');
+  const guest = await joinGuest(room, await newTicket(host), { name: 'guestNick' });
+  await guest.next((m) => m.t === 'ready');
+  await host.next((m) => m.t === 'joined');
+
+  const sealed = await encryptMessage(room.key, room.id, { n: 'guestNick', u: 'g1' }, 'typing');
+  guest.send({ t: 'typing', ...sealed });
+  const got = await host.next((m) => m.t === 'typing');
+  assert.deepEqual(await decryptMessage(room.key, room.id, got, 'typing'), { n: 'guestNick', u: 'g1' });
+  assert.equal(await decryptMessage(room.key, room.id, got, 'msg'), null, 'a typing notice cannot pass as a chat message');
+
+  // The sender is not told about their own typing, and nothing is kept.
+  assert.ok(!guest.inbox.some((m) => m.t === 'typing'));
+  assert.equal(app.store.open(room.id).messages.length, 0);
+
+  // Garbage is ignored, and flooding hits a limit without blocking real messages.
+  guest.send({ t: 'typing', iv: 'x', ct: 'y' });
+  for (let i = 0; i < 30; i++) guest.send({ t: 'typing', ...sealed });
+  const chat = await encryptMessage(room.key, room.id, { n: 'guestNick', u: 'g1', t: 'still works', s: 1 });
+  guest.send({ t: 'msg', ...chat });
+  const m = await host.next((x) => x.t === 'msg');
+  assert.equal((await decryptMessage(room.key, room.id, m.m)).t, 'still works');
+  const typingSeen = host.inbox.filter((x) => x.t === 'typing').length;
+  assert.ok(typingSeen < 30, `typing flood should be limited (saw ${typingSeen})`);
+
+  host.ws.close();
+  guest.ws.close();
+});
+
+test('a reply and its quote travel inside the encrypted message', async () => {
+  const room = await fastRoom();
+  const { host } = await hostWithReady(room, 'hostNick');
+  const quoted = 'the quoted words should stay private';
+  const sealed = await encryptMessage(room.key, room.id, { n: 'hostNick', u: 'h1', t: 'agreed', s: 1, r: { i: 1, n: 'guestNick', q: quoted } });
+  host.send({ t: 'msg', ...sealed });
+  const got = await host.next((m) => m.t === 'msg');
+  const p = await decryptMessage(room.key, room.id, got.m);
+  assert.deepEqual(p.r, { i: 1, n: 'guestNick', q: quoted });
+  assert.ok(!JSON.stringify(app.store.open(room.id)).includes(quoted));
+  host.ws.close();
+});
+
 /* ---------- one-time rooms ---------- */
 
 test('room is erased once everyone has left; reconnecting in time keeps it', () =>
