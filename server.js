@@ -541,6 +541,14 @@ export function createApp(opts = {}) {
     if (stored) broadcast(ws.roomId, { t: 'msg', m: stored });
   }
 
+  // "Someone is typing": an encrypted notice passed on to everyone else, never stored.
+  function handleTyping(ws, msg) {
+    if (!ws.roomId) return;
+    const { iv, ct } = msg;
+    if (!isB64u(iv, 16) || typeof ct !== 'string' || ct.length < 22 || ct.length > 512 || !B64U.test(ct)) return;
+    broadcast(ws.roomId, { t: 'typing', iv, ct }, ws);
+  }
+
   function handleFileChunk(ws, msg) {
     if (!ws.roomId) return;
     const { f, i, n, iv, ct } = msg;
@@ -620,7 +628,12 @@ export function createApp(opts = {}) {
       if (!msg || typeof msg !== 'object') return;
 
       const bulk = msg.t === 'fchunk' || msg.t === 'fget';
-      const allowed = bulk ? limiter.take(`wsf:${ws.id}`, 400, 30_000) : limiter.take(`ws:${ws.id}`, 30, 10_000);
+      // "typing" signals have their own small budget so they never use up the message budget.
+      const allowed = bulk
+        ? limiter.take(`wsf:${ws.id}`, 400, 30_000)
+        : msg.t === 'typing'
+          ? limiter.take(`wst:${ws.id}`, 10, 10_000)
+          : limiter.take(`ws:${ws.id}`, 30, 10_000);
       if (!allowed) return send(ws, { t: 'error', code: 'rate_limited' });
 
       switch (msg.t) {
@@ -628,6 +641,8 @@ export function createApp(opts = {}) {
           return handleJoin(ws, msg);
         case 'msg':
           return handleMessage(ws, msg);
+        case 'typing':
+          return handleTyping(ws, msg);
         case 'fchunk':
           return handleFileChunk(ws, msg);
         case 'fget':

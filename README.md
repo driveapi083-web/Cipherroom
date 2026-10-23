@@ -9,6 +9,7 @@ Private, open-source, end-to-end encrypted, **one-time** chat rooms. Create a ro
 - **The host leaving ends the room.** If the host presses Leave or Delete, everyone is removed and everything is erased. If the host only drops off, guests see a warning and the room ends after 60 seconds unless the host returns.
 - **One-time rooms, memory only.** Rooms live only in the server's memory and are never written to disk. When everyone has left the room is erased after a short grace period. A room nobody ever enters expires after 10 minutes, and restarting the server erases every room.
 - **Encrypted photos and files.** Up to 10 MB per file and 50 MB per room, encrypted in the browser in 64 KB pieces. Photos are shrunk (and their hidden location data removed) before sending and shown in the chat; other files are download-only and are never opened automatically.
+- **Replies and typing indicator.** Press the reply arrow next to a message to answer it with a short quote (first 100 characters); click a quote to jump to the original. "Someone is typing" notices are encrypted like messages, passed on to the others only, never stored, and disappear after 5 seconds.
 - **Join and leave notices**, and **warnings if the server repeats, reorders or silently drops messages** (checked with sequence numbers inside the encrypted messages).
 - **No accounts, no tracking, no access logs.**
 
@@ -86,7 +87,7 @@ master secret --HKDF--> auth token   (sent to the server to prove you know the p
 master secret --HKDF--> AES-256-GCM key  (never leaves your device)
 ```
 
-- Each message is `{nickname, text, sender id, counter}` encrypted with AES-256-GCM, a fresh random 96-bit nonce, and the room id plus the message purpose as authenticated data, so a message cannot be moved to another room or reused for another role.
+- Each message is `{nickname, text, sender id, counter, optional reply quote}` encrypted with AES-256-GCM, a fresh random 96-bit nonce, and the room id plus the message purpose as authenticated data, so a message cannot be moved to another room or reused for another role.
 - Files are cut into 64 KB chunks, each encrypted with AES-GCM and bound to the file id, its position and the chunk count, so the server cannot reorder, drop or splice chunks without detection. File names and types are inside encrypted messages.
 - The browser refuses to join a room whose key settings are weaker than 600,000 PBKDF2 rounds, even if the server asks for it.
 - The server stores a SHA-256 hash of the auth token, never the token itself, and never the key or password.
